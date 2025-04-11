@@ -1,36 +1,43 @@
-name: Run Python Security Scanner
+name: Security Scan
 
 on:
-  pull_request:
-    branches: [ main ]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
-  scan:
+  security-scan:
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-      pull-requests: write
+    permissions: write-all
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install Bandit
-        run: pip install bandit
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit
 
-      - name: Run Scanner and Capture Output
-        id: scan
+      - name: Run scanner_updated.py
+        id: run_scan
         run: |
           echo "Running Security Scanner..."
           output=$(python scripts/scanner_updated.py)
-          echo "$output" > full_output.txt
-          
+          echo "$output" > security-scan-results.txt
+
           if echo "$output" | grep -q "Severity: HIGH"; then
             echo "scan_status=Critical Issues Found!" >> $GITHUB_ENV
           else
@@ -41,19 +48,17 @@ jobs:
           echo "$output" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
-      - name: Comment PR with Scanner Results
-        uses: peter-evans/create-or-update-comment@v3
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@v3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          issue-number: ${{ github.event.pull_request.number }}
-          body: |
-            ## 🔐 Security Scan Results from `scanner_updated.py`
+          name: security-scan-results
+          path: |
+            security-scan-results.txt
+          retention-days: 5
 
-            **Scan Status:** ${{ env.scan_status }}
-
-            ```
-            ${{ env.scanner_output }}
-            ```
-
-            ---
-            > ⚠️ Please address any critical/high severity vulnerabilities before merging.
+      - name: Fail if vulnerabilities found
+        if: env.scan_status == 'Critical Issues Found!'
+        run: |
+          echo "::error::Critical security vulnerabilities were detected. Please review and address them before merging."
+          exit 1
