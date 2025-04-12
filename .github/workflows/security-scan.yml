@@ -60,5 +60,5 @@ jobs:
       - name: Fail if vulnerabilities found
         if: env.scan_status == 'Critical Issues Found!'
         run: |
-          echo "::error::Critical security vulnerabilities were detected. Please review and address them before merging."
+          echo "::error::Critical security vulnerabilities were detected. Please review and address them before merging or pushing."
           exit 1
